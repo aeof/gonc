@@ -49,6 +49,9 @@ func main() {
 	conn, err := net.DialTimeout("tcp", host+":"+port, timeout)
 	checkError(err)
 	defer conn.Close()
+	if verbose {
+		fmt.Printf("Succeeded to connect to %s %s port!\n", host, port)
+	}
 
 	go func() {
 		io.Copy(conn, os.Stdin)
