@@ -56,6 +56,6 @@ func main() {
 	go func() {
 		io.Copy(conn, os.Stdin)
 	}()
-	_, err = io.Copy(os.Stdin, conn)
+	_, err = io.Copy(os.Stdout, conn)
 	checkError(err)
 }
