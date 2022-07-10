@@ -23,5 +23,5 @@ func main() {
 	go func() {
 		io.Copy(conn, os.Stdin)
 	}()
-	io.Copy(os.Stdin, conn)
+	io.Copy(os.Stdout, conn)
 }
