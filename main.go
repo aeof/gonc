@@ -1,27 +1,58 @@
 package main
 
 import (
+	"flag"
+	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
+	"time"
 )
 
-func main() {
-	if len(os.Args) != 3 {
-		log.Fatal("Usage: nc host port")
-	}
-	host := os.Args[1]
-	port := os.Args[2]
+var (
+	verbose bool
+	timeout int
+)
 
-	conn, err := net.Dial("tcp", host+":"+port)
-	if err != nil {
-		log.Fatal(err)
+const DefaultTimeout = 0
+
+func init() {
+	flag.IntVar(&timeout, "w", DefaultTimeout, "Connections which cannot be established or are idle timeout after timeout seconds.")
+	flag.BoolVar(&verbose, "v", false, "Produce more verbose output.")
+	flag.Parse()
+}
+
+func checkError(err error) {
+	if err == nil {
+		return
 	}
+
+	// only output error when verbose mode is on
+	if verbose {
+		fmt.Fprint(os.Stderr, err)
+	}
+	os.Exit(1)
+}
+
+func main() {
+	// parse arguments
+	args := flag.Args()
+	if len(args) != 2 {
+		flag.Usage()
+		os.Exit(1)
+	}
+	host := args[0]
+	port := args[1]
+
+	// connect to the server
+	timeout := time.Duration(timeout) * time.Second
+	conn, err := net.DialTimeout("tcp", host+":"+port, timeout)
+	checkError(err)
 	defer conn.Close()
 
 	go func() {
 		io.Copy(conn, os.Stdin)
 	}()
-	io.Copy(os.Stdin, conn)
+	_, err = io.Copy(os.Stdin, conn)
+	checkError(err)
 }
