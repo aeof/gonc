@@ -73,17 +73,17 @@ func (d *Dialer) Dial(network, address string) (Conn, error) {
 ```go
 var (
     // 详尽模式是否打开
-	verbose bool
+    verbose bool
     // 超时时间有多少秒
-	timeout int
+    timeout int
 )
 
 const DefaultTimeout = 0
 
 func init() {
-	flag.IntVar(&timeout, "w", DefaultTimeout, "Connections which cannot be established or are idle timeout after timeout seconds.")
-	flag.BoolVar(&verbose, "v", false, "Produce more verbose output.")
-	flag.Parse()
+    flag.IntVar(&timeout, "w", DefaultTimeout, "Connections which cannot be established or are idle timeout after timeout seconds.")
+    flag.BoolVar(&verbose, "v", false, "Produce more verbose output.")
+    flag.Parse()
 }
 ```
 
@@ -91,7 +91,44 @@ func init() {
 
 # 思考
 
-如何通过`net.Dialer`的`DialContext()`方法，同时连接`www.google.com:80`、`www.baidu.com:80`、`www.youtube.com:80`，如果其中一条TCP连接成功则取消其余的连接。
+以测试三个备用站点的最短TCP握手时延为例，如何通过`net.Dialer`的`DialContext()`方法，同时尝试连接`www.google.com:80`、`www.baidu.com:80`、`www.youtube.com:80`，如果其中一条TCP连接成功则取消其余的连接，输出连接时延最低的地址和时延：
+
+```go
+// delay_test.go
+package main
+
+func TestDialTimeout(t *testing.T) {
+	addresses := []string{
+		"www.baidu.com:80",
+		"www.google.com:80",
+		"www.youtube.com:80",
+	}
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	defer cancelFunc()
+
+	startTime := time.Now()
+	addressStream := make(chan string)
+	for _, address := range addresses {
+		go dialContext(ctx, addressStream, address)
+	}
+	optimalAddr := <-addressStream
+
+	fmt.Printf("{Addr: %q, Delay: %v}", optimalAddr, time.Since(startTime))
+}
+
+func dialContext(ctx context.Context, winner chan string, address string) {
+	var d net.Dialer
+	d.DialContext(ctx, "tcp", address)
+
+	// 要么是最优服务器走第二个分支，要么因为context被取消走第一个分支
+	select {
+	case <-ctx.Done():
+	case winner <- address:
+	}
+}
+```
+
+
 
 ## 参考文献
 
