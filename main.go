@@ -22,37 +22,6 @@ func init() {
 	flag.Parse()
 }
 
-// timeoutConn is a wrapper for net.Conn, which sets deadline for every read/write.
-type timeoutConn struct {
-	net.Conn
-	readTimeout  time.Duration
-	writeTimeout time.Duration
-}
-
-func newTimeoutConn(conn net.Conn, readTimeout, writeTimeout time.Duration) net.Conn {
-	return timeoutConn{
-		Conn:         conn,
-		readTimeout:  readTimeout,
-		writeTimeout: writeTimeout,
-	}
-}
-
-func (tr timeoutConn) Read(p []byte) (n int, err error) {
-	// when read timeout is zero, read will not timeout
-	if tr.readTimeout != 0 {
-		tr.SetReadDeadline(time.Now().Add(tr.readTimeout))
-	}
-	return tr.Conn.Read(p)
-}
-
-func (tr timeoutConn) Write(p []byte) (n int, err error) {
-	// when write timeout is zero, write will not timeout
-	if tr.writeTimeout != 0 {
-		tr.SetWriteDeadline(time.Now().Add(tr.writeTimeout))
-	}
-	return tr.Conn.Write(p)
-}
-
 func checkError(err error) {
 	if err == nil {
 		return
@@ -84,7 +53,7 @@ func main() {
 		fmt.Printf("Succeeded to connect to %s %s port!\n", host, port)
 	}
 
-	conn = newTimeoutConn(conn, timeout, timeout)
+	conn = NewTimeoutConn(conn, timeout, timeout)
 	go func() {
 		io.Copy(conn, os.Stdin)
 	}()
