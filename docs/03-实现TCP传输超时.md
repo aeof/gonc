@@ -18,7 +18,7 @@
 
 相较建立连接的超时而言，建立连接后读写的超时往往更为常见，因为TCP的模型对通信双方而言是一个可以读写的数据流，就像我们读写普通的文件一样。建立连接后连接中并非时时刻刻都在交换数据，一方迟迟接收不到另一方的数据的场景非常常见。一个看起来并不直观的情况是，在没有NAT等记录中间状态的节点存在以及没有设置TCP Keep-Alive的情况下，一条TCP连接可以在没有任何数据交换的情况下一直存在。例如，在我们建立连接后，如果不设置TCP的Keep-Alive，通信的两端可能一直收不到对方的数据而且TCP连接也没被关闭，这就导致对TCP连接的读操作(`conn.Read()`)可以阻塞几十分钟、几个小时甚至几天，直至收到数据或者网络连接被某另一方关闭，这使得我们需要处理对TCP连接的读写超时。
 
-![idle connection](https://img.aeof.top/idle%20connection.png)
+![idle connection](https://img.aeof.me/idle%20connection.png)
 
 <center>客户端连接服务器后迟迟不发送数据</center>
 
@@ -34,35 +34,35 @@ Go为我们提供了读写超时控制的API，但在学习新的API前，我们
 package main
 
 import (
-	"fmt"
-	"log"
-	"net"
-	"time"
+    "fmt"
+    "log"
+    "net"
+    "time"
 )
 
 func main() {
-	// 与本地的NC TCP服务器建立连接
-	conn, err := net.Dial("tcp", "localhost:8080")
-	if err != nil {
-		log.Fatalln(err)
-	}
-	defer conn.Close()
+    // 与本地的NC TCP服务器建立连接
+    conn, err := net.Dial("tcp", "localhost:8080")
+    if err != nil {
+        log.Fatalln(err)
+    }
+    defer conn.Close()
 
-	// 设置一个定时函数，三秒后关闭连接
-	timer := time.AfterFunc(3*time.Second, func() {
-		conn.Close()
-	})
+    // 设置一个定时函数，三秒后关闭连接
+    timer := time.AfterFunc(3*time.Second, func() {
+        conn.Close()
+    })
 
-	// 读网络数据，三秒后Read还未成功，连接就会被关闭
-	// 如果数据读取超时，Read就会返回use of closed network connection的错误
-	// 如果数据读取成功，我们就关闭定时器，不关闭这个连接
-	buf := make([]byte, 1024)
-	n, err := conn.Read(buf)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	timer.Stop()
-	fmt.Printf("读取到: %q\n", string(buf[:n]))
+    // 读网络数据，三秒后Read还未成功，连接就会被关闭
+    // 如果数据读取超时，Read就会返回use of closed network connection的错误
+    // 如果数据读取成功，我们就关闭定时器，不关闭这个连接
+    buf := make([]byte, 1024)
+    n, err := conn.Read(buf)
+    if err != nil {
+        log.Fatalln(err)
+    }
+    timer.Stop()
+    fmt.Printf("读取到: %q\n", string(buf[:n]))
 }
 ```
 
@@ -83,33 +83,33 @@ func main() {
 package main
 
 import (
-	"fmt"
-	"log"
-	"net"
-	"time"
+    "fmt"
+    "log"
+    "net"
+    "time"
 )
 
 func main() {
-	// 与本地的NC TCP服务器建立连接
-	conn, err := net.Dial("tcp", "localhost:8080")
-	if err != nil {
-		log.Fatalln(err)
-	}
-	defer conn.Close()
+    // 与本地的NC TCP服务器建立连接
+    conn, err := net.Dial("tcp", "localhost:8080")
+    if err != nil {
+        log.Fatalln(err)
+    }
+    defer conn.Close()
 
     // 设置读的超时时间
-	deadline := time.Now().Add(3 * time.Second)
-	if err := conn.SetReadDeadline(deadline); err != nil {
-		log.Fatalln(err)
-	}
+    deadline := time.Now().Add(3 * time.Second)
+    if err := conn.SetReadDeadline(deadline); err != nil {
+        log.Fatalln(err)
+    }
 
-	buf := make([]byte, 1024)
-	n, err := conn.Read(buf)
-	// 如果超过deadline会返回一个I/O timeout的error
-	if err != nil {
-		log.Fatalln(err)
-	}
-	fmt.Printf("读取到: %q\n", string(buf[:n]))
+    buf := make([]byte, 1024)
+    n, err := conn.Read(buf)
+    // 如果超过deadline会返回一个I/O timeout的error
+    if err != nil {
+        log.Fatalln(err)
+    }
+    fmt.Printf("读取到: %q\n", string(buf[:n]))
 }
 ```
 
@@ -124,21 +124,19 @@ func main() {
 我们可以通过调用Deadline的三个方法来控制超时，但是每次读写都需要重复设置读写截止时刻=当前时间+超时时间，其实并不方便。因为很多时候我们的读写超时时间往往固定，我们可以封装一个具有读写超时的网络连接，在其上读写更为方便：
 
 ```go
-// 一个对net.Conn的包装类型
-// 如果设置了读/写的Deadline，那么读/写的超时时间由其Deadline决定。
-// 如果没有设置读/写的Deadline，那么每一次调用读/写的超时时刻=当前时间+超时时长
+// 一个对net.Conn的包装类型，每次读/写都修改其deadline为当前时间+读/写超时时长
 type timeoutConn struct {
-    // 嵌入一个连接，可以不用实现net.Conn部分方法，直接用这个连接的
+	// the actual network connection
 	net.Conn
-    // 标记用户是否设置了读的截止时间
-	isReadDeadlineSet bool
-    // 标记用户是否设置了写的截止时间
-	isWriteDeadlineSet bool
+
+	// timeout for every read from the connection
 	ReadTimeout time.Duration
+
+	// timeout for every write to the connection
 	WriteTimeout time.Duration
 }
 
-func newTimeoutConn(conn net.Conn, readTimeout, writeTimeout time.Duration) net.Conn {
+func NewTimeoutConn(conn net.Conn, readTimeout, writeTimeout time.Duration) net.Conn {
 	return &timeoutConn{
 		Conn:         conn,
 		ReadTimeout:  readTimeout,
@@ -146,145 +144,37 @@ func newTimeoutConn(conn net.Conn, readTimeout, writeTimeout time.Duration) net.
 	}
 }
 
-// 实现net.Conn接口的Read方法，如果设置了读的Deadline就按照读的Deadline，否则按照设置的timeout
 func (tr *timeoutConn) Read(p []byte) (n int, err error) {
-	if !tr.isReadDeadlineSet && tr.ReadTimeout != 0 {
+	var zero time.Duration
+	if tr.ReadTimeout != zero {
 		tr.Conn.SetReadDeadline(time.Now().Add(tr.ReadTimeout))
 	}
 	return tr.Conn.Read(p)
 }
 
-// 实现net.Conn接口的Write方法，如果设置了写的Deadline就按照读的Deadline，否则按照设置的timeout
 func (tr *timeoutConn) Write(p []byte) (n int, err error) {
-	if !tr.isWriteDeadlineSet && tr.WriteTimeout != 0 {
-		tr.SetWriteDeadline(time.Now().Add(tr.WriteTimeout))
+	var zero time.Duration
+	if tr.ReadTimeout != zero {
+		tr.Conn.SetReadDeadline(time.Now().Add(tr.ReadTimeout))
 	}
 	return tr.Conn.Write(p)
 }
+Footer
 
-func (tr *timeoutConn) SetDeadline(t time.Time) error {
-	if err := tr.SetReadDeadline(t); err != nil {
-		return err
-	}
-	if err := tr.SetWriteDeadline(t); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (tr *timeoutConn) SetReadDeadline(t time.Time) error {
-	var zero time.Time
-	if t == zero {
-		tr.isReadDeadlineSet = false
-	} else {
-		tr.isReadDeadlineSet = true
-	}
-	return tr.Conn.SetReadDeadline(t)
-}
-
-func (tr *timeoutConn) SetWriteDeadline(t time.Time) error {
-	var zero time.Time
-	if t == zero {
-		tr.isWriteDeadlineSet = false
-	} else {
-		tr.isWriteDeadlineSet = true
-	}
-	return tr.Conn.SetWriteDeadline(t)
-}
 ```
 
-#### 为什么要嵌入一个字段
+## 如何手动测试
 
-我们在这里把一个`net.Conn`嵌入为`timeoutConn`类型的一个字段，因为我们为了通用性要让这个`*timeoutConn`类型实现`net.Conn`接口，这样我们就需要为`*timeoutConn`实现`net.Conn`的所有方法。而我们又不想要重新编写一部分方法的代码，比如说`LocalAddr()`，这个时候我们嵌入这个我们实际操作的`net.Conn`类型的网络连接，就可以直接调用它的方法了：
-
-```go
-conn, _ := net.Dial("tcp", "www.google.com:http")
-defer conn.Close()
-
-// 产生一个包装的有读写超时的net.Conn接口变量，实际是timeoutConn类型
-conn = newTimeoutConn(conn, 10 * time.Second, 3 * time.Second)
-
-// 实际调用的是conn里存放的net.Conn类型的连接的LocalAddr()
-fmt.Println(conn.LocalAddr())
-```
-
-#### 修改后的代码
-
-```go
-package main
-
-import (
-	"flag"
-	"fmt"
-	"io"
-	"net"
-	"os"
-	"time"
-)
-
-var (
-	verbose       bool
-	timeoutSecond int
-)
-
-const DefaultTimeout = 0
-
-func init() {
-	flag.IntVar(&timeoutSecond, "w", DefaultTimeout, "Connections which cannot be established or are idle timeout after timeout seconds.")
-	flag.BoolVar(&verbose, "v", false, "Produce more verbose output.")
-	flag.Parse()
-}
-
-func checkError(err error) {
-	if err == nil {
-		return
-	}
-
-	// only output error when verbose mode is on
-	if verbose {
-		fmt.Fprint(os.Stderr, err)
-	}
-	os.Exit(1)
-}
-
-func main() {
-	// parse arguments
-	args := flag.Args()
-	if len(args) != 2 {
-		flag.Usage()
-		os.Exit(1)
-	}
-	host := args[0]
-	port := args[1]
-
-	// connect to the server
-	timeout := time.Duration(timeoutSecond) * time.Second
-	conn, err := net.DialTimeout("tcp", host+":"+port, timeout)
-	checkError(err)
-	defer conn.Close()
-	if verbose {
-		fmt.Printf("Succeeded to connect to %s %s port!\n", host, port)
-	}
-
-	conn = NewTimeoutConn(conn, timeout, timeout)
-	go func() {
-		io.Copy(conn, os.Stdin)
-	}()
-	_, err = io.Copy(os.Stdout, conn)
-	checkError(err)
-}
-```
-
-我们可以运行`go run main.go timeoutConn.go -v -w 3 baidu.com http`连接到`baidu.com`，如果我们不发送数据，那么连接的`Read`会在3秒后超时。当然，这样运行比较麻烦，我们可以在项目根目录运行`go install`安装该文件到`GOPATH`环境变量的`bin`目录下，我们可以在这个目录下找到`gonc`并运行，如果我们把这个目录加到了`PATH`还可以直接在其他目录外运行`gonc`:
+我们可以运行`go run . -v -w 3 -G 2 baidu.com http`连接到`baidu.com`，如果一直无法建立连接，那么连接操作将在2秒后超时；如果我们一直不发送数据，那么连接的`Read`会在3秒后超时。当然，这样运行比较麻烦，我们可以在项目根目录运行`go install`安装该文件到`GOPATH`环境变量的`bin`目录下，我们可以在这个目录下找到`gonc`并运行，如果我们把这个目录加到了`PATH`还可以直接在其他目录外运行`gonc`:
 
 ```shell
 go install
-gonc -v -w 3 baidu.com http
+gonc -v -w 3 -G 2 baidu.com http
 ```
 
 ## 思考
 
-如何用单元测试测试我们封装的这个类型是否实现有问题呢？
+如何用单元测试测试我们封装的这个类型是否实现有问题呢？代码中有一个单元测试文件可以作为抛砖引玉的参考。
 
 ## 参考文献
 
