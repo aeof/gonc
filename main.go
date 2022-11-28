@@ -7,17 +7,21 @@ import (
 	"net"
 	"os"
 	"time"
+
+	"github.com/aeof/gonc/client"
 )
 
 var (
-	verbose       bool
-	timeoutSecond int
+	verbose           bool
+	timeoutConnection int
+	timeoutIdle       int
 )
 
 const DefaultTimeout = 0
 
 func init() {
-	flag.IntVar(&timeoutSecond, "w", DefaultTimeout, "Connections which cannot be established or are idle timeout after timeout seconds.")
+	flag.IntVar(&timeoutIdle, "w", DefaultTimeout, "If a connection and stdin are idle for more than timeout seconds then the connection is silently closed.")
+	flag.IntVar(&timeoutConnection, "G", DefaultTimeout, "TCP connection timeout in seconds")
 	flag.BoolVar(&verbose, "v", false, "Produce more verbose output.")
 	flag.Parse()
 }
@@ -29,7 +33,7 @@ func checkError(err error) {
 
 	// only output error when verbose mode is on
 	if verbose {
-		fmt.Fprint(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, err)
 	}
 	os.Exit(1)
 }
@@ -45,15 +49,14 @@ func main() {
 	port := args[1]
 
 	// connect to the server
-	timeout := time.Duration(timeoutSecond) * time.Second
-	conn, err := net.DialTimeout("tcp", host+":"+port, timeout)
+	conn, err := net.DialTimeout("tcp", host+":"+port, time.Duration(timeoutConnection)*time.Second)
 	checkError(err)
 	defer conn.Close()
 	if verbose {
 		fmt.Printf("Succeeded to connect to %s %s port!\n", host, port)
 	}
 
-	conn = NewTimeoutConn(conn, timeout, timeout)
+	conn = client.NewTimeoutConn(conn, time.Duration(timeoutIdle)*time.Second, time.Duration(timeoutIdle)*time.Second)
 	go func() {
 		io.Copy(conn, os.Stdin)
 	}()
